@@ -1,0 +1,55 @@
+FROM debian:bookworm-slim AS builder
+
+ARG STUNNEL_VERSION
+
+RUN apt-get update && apt-get install -y ca-certificates tzdata bash wget tar make build-essential libssl-dev
+
+
+WORKDIR /app
+
+RUN wget https://www.stunnel.org/downloads/stunnel-$STUNNEL_VERSION.tar.gz
+
+RUN tar xf stunnel-$STUNNEL_VERSION.tar.gz
+
+WORKDIR /app/stunnel-$STUNNEL_VERSION
+
+RUN ./configure
+
+RUN make
+
+RUN make install
+
+# Final image.
+FROM debian:bookworm-slim
+
+ARG USER=stunnel
+ARG UID=10009
+
+RUN apt-get update && apt-get install -y ca-certificates bash tzdata
+
+# See https://stackoverflow.com/a/55757473/12429735RUN
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --shell "/sbin/nologin" \
+    --uid "${UID}" \
+    "${USER}"
+
+RUN usermod -rG users ${USER}
+
+RUN mkdir /stunnel
+RUN chown -R ${USER}:${USER} /stunnel
+
+COPY --from=builder --chown=${USER}:${USER} /usr/local/bin/stunnel /usr/local/bin/
+
+RUN stunnel -version
+
+# Cannot assume buildkit, hence no chmod
+COPY ./docker-entrypoint.sh /usr/local/bin/
+
+# Belt and suspenders
+RUN chmod -R 755 /usr/local/bin/*
+
+USER ${USER}
+
+ENTRYPOINT ["stunnel"]
